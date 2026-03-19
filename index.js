@@ -1,6 +1,9 @@
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
+const app = express();
+app.use(cors());
+app.use(express.json());
 
 // Configuraciones de Base de Datos
 const conectarMongo = require('./config/mongo');
@@ -16,9 +19,7 @@ const proveedorRoutes = require('./routes/proveedorRoutes');
 const ventaRoutes = require('./routes/ventaRoutes');
 const comprasRoutes = require('./routes/compraRoutes');
 
-const app = express();
-app.use(cors());
-app.use(express.json());
+
 
 // Ejecutar conexión a MongoDB
 conectarMongo();
