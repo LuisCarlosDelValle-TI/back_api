@@ -4,9 +4,10 @@ const LogMongo = require('../models/LogMongo');
 const obtenerProductos = async (req, res) => {
     try {
         const { rows } = await pgPool.query(`
-            SELECT p.*, c.nombre as categoria 
+            SELECT p.*, c.nombre as categoria
             FROM productos p JOIN categorias c ON p.id_categoria = c.id_categoria
-        `);
+            ORDER BY p.id_producto DESC
+        `); // p.* ya trae la columna imagen_url automáticamente
         res.json(rows);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -15,19 +16,30 @@ const obtenerProductos = async (req, res) => {
 
 const crearProducto = async (req, res) => {
     try {
-        const { nombre, descripcion, precio_venta, stock, id_categoria, id_usuario_accion, nombre_empleado } = req.body;
+        // Extraemos los datos del body de forma limpia
+        const {
+            nombre,
+            descripcion,
+            precio_venta,
+            stock,
+            id_categoria,
+            imagen_url, // <--- Este es el que nos importa
+            id_usuario_accion,
+            nombre_empleado
+        } = req.body;
 
         // 1. Guardar en PostgreSQL
+        // Aseguramos que imagen_url sea el parámetro $6
         const { rows } = await pgPool.query(
-            'INSERT INTO productos (nombre, descripcion, precio_venta, stock, id_categoria) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-            [nombre, descripcion, precio_venta, stock, id_categoria]
+            'INSERT INTO productos (nombre, descripcion, precio_venta, stock, id_categoria, imagen_url) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+            [nombre, descripcion || null, precio_venta, stock, id_categoria, imagen_url || null]
         );
 
-        // 2. Guardar TODO el chisme completo en MongoDB
+        // 2. Guardar en MongoDB
         await LogMongo.create({
             accion: 'CREAR_PRODUCTO',
-            usuario_id: id_usuario_accion, // Aquí simulamos que el Dueño (ID 1) lo hizo
-            nombre_empleado: nombre_empleado, // El nombre del responsable
+            usuario_id: id_usuario_accion || 1,
+            nombre_empleado: nombre_empleado || 'Admin',
             detalles: {
                 producto_creado: nombre,
                 precio_asignado: precio_venta,
@@ -36,6 +48,33 @@ const crearProducto = async (req, res) => {
         });
 
         res.status(201).json(rows[0]);
+    } catch (error) {
+        console.error("Error al crear producto:", error.message);
+        res.status(500).json({ error: error.message });
+    }
+};
+const actualizarProducto = async (req, res) => {
+    try {
+        const { id } = req.params;
+        // AGREGO: imagen_url al recibir los datos para editar
+        const { nombre, descripcion, precio_venta, stock, id_categoria, imagen_url } = req.body;
+
+        // AGREGO: imagen_url al UPDATE ($6) y el ID pasa a ser $7
+        const { rows } = await pgPool.query(
+            'UPDATE productos SET nombre = $1, descripcion = $2, precio_venta = $3, stock = $4, id_categoria = $5, imagen_url = $6 WHERE id_producto = $7 RETURNING *',
+            [nombre, descripcion, precio_venta, stock, id_categoria, imagen_url, id]
+        );
+
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Producto no encontrado' });
+        }
+
+        await LogMongo.create({
+            accion: 'ACTUALIZAR_PRODUCTO',
+            detalles: { producto: nombre, id: id }
+        });
+
+        res.json(rows[0]);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -46,7 +85,6 @@ const actualizarPrecio = async (req, res) => {
         const { id } = req.params;
         const { nuevo_precio } = req.body;
 
-        // Obtener precio anterior para el log
         const oldProd = await pgPool.query('SELECT precio_venta, nombre FROM productos WHERE id_producto = $1', [id]);
 
         const { rows } = await pgPool.query(
@@ -72,12 +110,8 @@ const actualizarPrecio = async (req, res) => {
 const eliminarProducto = async (req, res) => {
     try {
         const { id } = req.params;
-
-        // Obtener nombre para el log
         const oldProd = await pgPool.query('SELECT nombre FROM productos WHERE id_producto = $1', [id]);
-
         await pgPool.query('DELETE FROM productos WHERE id_producto = $1', [id]);
-
         await LogMongo.create({ accion: 'ELIMINAR_PRODUCTO', detalles: { producto: oldProd.rows[0].nombre } });
         res.json({ message: 'Producto eliminado' });
     } catch (error) {
@@ -85,4 +119,4 @@ const eliminarProducto = async (req, res) => {
     }
 };
 
-module.exports = { obtenerProductos, crearProducto, actualizarPrecio, eliminarProducto };
+module.exports = { obtenerProductos, crearProducto, actualizarPrecio, actualizarProducto, eliminarProducto };
