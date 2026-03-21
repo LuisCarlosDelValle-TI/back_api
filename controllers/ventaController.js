@@ -52,17 +52,31 @@ const obtenerVentas = async (req, res) => {
 const obtenerDetalleVenta = async (req, res) => {
     try {
         const { id } = req.params;
-        const query = `
-            SELECT 
-                p.nombre AS producto, 
-                dv.cantidad, 
-                (dv.cantidad * dv.precio_unitario) AS subtotal 
+
+
+        const ventaCabecera = await pgPool.query(`
+            SELECT u.nombre as cajero 
+            FROM ventas v 
+            JOIN usuarios u ON v.id_usuario = u.id_usuario 
+            WHERE v.id_venta = $1
+        `, [id]);
+
+        const nombreCajero = ventaCabecera.rows.length > 0 ? ventaCabecera.rows[0].cajero : 'N/A';
+
+
+        const queryDetalles = `
+            SELECT p.nombre AS producto, dv.cantidad, (dv.cantidad * dv.precio_unitario) AS subtotal 
             FROM detalle_ventas dv
             JOIN productos p ON dv.id_producto = p.id_producto
             WHERE dv.id_venta = $1
         `;
-        const { rows } = await pgPool.query(query, [id]);
-        res.json(rows);
+        const { rows } = await pgPool.query(queryDetalles, [id]);
+
+        // 3. Enviamos TODO junto: el nombre del cajero y la lista de productos
+        res.json({
+            cajero: nombreCajero,
+            productos: rows
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
