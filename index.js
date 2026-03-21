@@ -18,6 +18,8 @@ const productoRoutes = require('./routes/productoRoutes');
 const proveedorRoutes = require('./routes/proveedorRoutes');
 const ventaRoutes = require('./routes/ventaRoutes');
 const comprasRoutes = require('./routes/compraRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
+const reportesRoutes = require('./routes/reportesRoutes');
 
 
 
@@ -32,6 +34,8 @@ app.use('/api/productos', productoRoutes);
 app.use('/api/proveedores', proveedorRoutes);
 app.use('/api/ventas', ventaRoutes);
 app.use('/api/compras', comprasRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/reportes', reportesRoutes);
 
 // Iniciar el servidor
 const PORT = process.env.PORT || 3000;
