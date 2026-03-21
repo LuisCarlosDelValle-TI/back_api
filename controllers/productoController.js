@@ -3,11 +3,14 @@ const LogMongo = require('../models/LogMongo');
 
 const obtenerProductos = async (req, res) => {
     try {
+        // CAMBIO: Agregamos WHERE p.activo = true para que no aparezcan los "borrados"
         const { rows } = await pgPool.query(`
             SELECT p.*, c.nombre as categoria
-            FROM productos p JOIN categorias c ON p.id_categoria = c.id_categoria
+            FROM productos p
+                     JOIN categorias c ON p.id_categoria = c.id_categoria
+            WHERE p.activo = true
             ORDER BY p.id_producto DESC
-        `); // p.* ya trae la columna imagen_url automáticamente
+        `);
         res.json(rows);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -16,26 +19,23 @@ const obtenerProductos = async (req, res) => {
 
 const crearProducto = async (req, res) => {
     try {
-        // Extraemos los datos del body de forma limpia
         const {
             nombre,
             descripcion,
             precio_venta,
             stock,
             id_categoria,
-            imagen_url, // <--- Este es el que nos importa
+            imagen_url,
             id_usuario_accion,
             nombre_empleado
         } = req.body;
 
-        // 1. Guardar en PostgreSQL
-        // Aseguramos que imagen_url sea el parámetro $6
+        // Nota: Por defecto la columna 'activo' es TRUE en la DB, no necesitas enviarla aquí.
         const { rows } = await pgPool.query(
             'INSERT INTO productos (nombre, descripcion, precio_venta, stock, id_categoria, imagen_url) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
             [nombre, descripcion || null, precio_venta, stock, id_categoria, imagen_url || null]
         );
 
-        // 2. Guardar en MongoDB
         await LogMongo.create({
             accion: 'CREAR_PRODUCTO',
             usuario_id: id_usuario_accion || 1,
@@ -53,13 +53,12 @@ const crearProducto = async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 };
+
 const actualizarProducto = async (req, res) => {
     try {
         const { id } = req.params;
-        // AGREGO: imagen_url al recibir los datos para editar
         const { nombre, descripcion, precio_venta, stock, id_categoria, imagen_url } = req.body;
 
-        // AGREGO: imagen_url al UPDATE ($6) y el ID pasa a ser $7
         const { rows } = await pgPool.query(
             'UPDATE productos SET nombre = $1, descripcion = $2, precio_venta = $3, stock = $4, id_categoria = $5, imagen_url = $6 WHERE id_producto = $7 RETURNING *',
             [nombre, descripcion, precio_venta, stock, id_categoria, imagen_url, id]
@@ -107,14 +106,33 @@ const actualizarPrecio = async (req, res) => {
     }
 };
 
+// --- FUNCIÓN CON EL CAMBIO MAESTRO: BORRADO LÓGICO ---
 const eliminarProducto = async (req, res) => {
     try {
         const { id } = req.params;
+
+        // 1. Buscamos el nombre para el log de Mongo
         const oldProd = await pgPool.query('SELECT nombre FROM productos WHERE id_producto = $1', [id]);
-        await pgPool.query('DELETE FROM productos WHERE id_producto = $1', [id]);
-        await LogMongo.create({ accion: 'ELIMINAR_PRODUCTO', detalles: { producto: oldProd.rows[0].nombre } });
-        res.json({ message: 'Producto eliminado' });
+
+        if (oldProd.rows.length === 0) {
+            return res.status(404).json({ error: 'Producto no encontrado' });
+        }
+
+        // 2. CAMBIO: En lugar de DELETE, hacemos un UPDATE de la columna activo
+        await pgPool.query('UPDATE productos SET activo = false WHERE id_producto = $1', [id]);
+
+        // 3. Registramos en Mongo (es importante saber quién "borró" algo)
+        await LogMongo.create({
+            accion: 'ELIMINAR_PRODUCTO_LOGICO',
+            detalles: {
+                producto: oldProd.rows[0].nombre,
+                mensaje: 'Producto desactivado (borrado lógico)'
+            }
+        });
+
+        res.json({ message: 'Producto desactivado correctamente' });
     } catch (error) {
+        console.error("Error en borrado lógico:", error.message);
         res.status(500).json({ error: error.message });
     }
 };
