@@ -9,7 +9,7 @@ app.use(cors({ origin: 'https://dashboard-angular-five.vercel.app' }));
 // Configuraciones de Base de Datos
 const conectarMongo = require('./config/mongo');
 const redisClient = require('./config/redis');
-const pool = require('./config/db'); // Cambié Pool a pool (minúscula) por buena práctica
+const pool = require('./config/db');
 
 // Rutas
 const rolRoutes = require('./routes/rolRoutes');
